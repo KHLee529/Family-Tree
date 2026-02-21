@@ -1,0 +1,72 @@
+{
+  "members": [
+    {
+      "id": "m1",
+      "name": "王大明",
+      "gender": "male",
+      "birthDate": "1940-05-10",
+      "deathDate": "2015-10-20",
+      "avatarUrl": "https://i.pravatar.cc/150?u=m1"
+    },
+    {
+      "id": "m2",
+      "name": "陳淑芬",
+      "gender": "female",
+      "birthDate": "1942-08-15",
+      "deathDate": null,
+      "avatarUrl": "https://i.pravatar.cc/150?u=m2"
+    },
+    {
+      "id": "m3",
+      "name": "王文傑",
+      "gender": "male",
+      "birthDate": "1965-01-20",
+      "deathDate": null,
+      "avatarUrl": "https://i.pravatar.cc/150?u=m3"
+    },
+    {
+      "id": "m4",
+      "name": "林美玲",
+      "gender": "female",
+      "birthDate": "1967-03-30",
+      "deathDate": null,
+      "avatarUrl": "https://i.pravatar.cc/150?u=m4"
+    },
+    {
+      "id": "m5",
+      "name": "王小龍",
+      "gender": "male",
+      "birthDate": "1990-11-25",
+      "deathDate": null,
+      "avatarUrl": "https://i.pravatar.cc/150?u=m5"
+    },
+    {
+      "id": "m6",
+      "name": "王小鳳",
+      "gender": "female",
+      "birthDate": "1992-06-15",
+      "deathDate": null,
+      "avatarUrl": "https://i.pravatar.cc/150?u=m6"
+    },
+    {
+      "id": "m7",
+      "name": "王武雄",
+      "gender": "male",
+      "birthDate": "1968-09-01",
+      "deathDate": null,
+      "avatarUrl": "https://i.pravatar.cc/150?u=m7"
+    }
+  ],
+  "families": [
+    {
+      "id": "f1",
+      "partners": ["m1", "m2"],
+      "children": ["m3", "m7"]
+    },
+    {
+      "id": "f2",
+      "partners": ["m3", "m4"],
+      "children": ["m5", "m6"]
+    }
+  ]
+}
