@@ -1,0 +1,64 @@
+# 家族樹 Web Application 實作計畫
+
+這個應用程式旨在提供一個能以多種視圖檢視與編輯家族樹的純前端網頁應用程式。
+
+## 核心技術選型 (Tech Stack)
+
+考量到單純的前端部署（Github Pages）與複雜的視圖操作（縮放、拖曳、極座標視圖）：
+- **前端框架**：React + TypeScript (提供強型別的資料結構管理與組件化開發)
+- **建構工具**：Vite (輕量快速)
+- **視圖繪製與互動**：D3.js + React (D3 負責計算複雜的樹狀與極座標佈局，React 負責渲染 SVG 節點，方便整合 HTML 側邊欄編輯器)
+- **狀態管理**：Zustand (輕量級前端狀態管理，適合操作全域的樹狀資料)
+- **全域樣式與 UI 元件**：Tailwind CSS (快速客製化介面)
+
+## 核心資料結構設計 (Data Structure)
+
+資料將以扁平的 Array 或 Dictionary 儲存，每個成員為一個 Node：
+
+```typescript
+type Gender = 'M' | 'F' | 'Other';
+
+interface FamilyMember {
+  id: string; // 唯一識別碼
+  name: string;
+  gender: Gender;
+  birthYear: number; // 為了對齊視圖，出生年份是關鍵
+  deathYear?: number; // 忌日 (選填)
+  parentId1?: string; // 父親或母親 ID
+  parentId2?: string; // 父親或母親 ID
+  spouseId?: string; // 配偶 ID (單一配偶)
+  photoUrl?: string; // 照片網址
+  notes?: string; // 備註
+}
+```
+
+## 視圖實作策略
+
+1. **一般家庭樹**：
+   - 找出沒有 `parentId` 的根節點夫妻。
+   - 利用 D3 的 `d3.tree()` 或 `d3.hierarchy()` 將扁平資料轉換為層級資料。
+   - **配偶連線邏輯**：一對配偶中，只有一人會是家族的直系血親。上一代的父母連線只需連到該直系子女，該子女再與其配偶以水平線相連。
+   - 繪製垂直的世代關係。
+
+2. **有出生時間關係的家庭樹 (垂直對齊)**：
+   - 不依賴傳統的樹狀層次 (depth)，而是將每個節點的 Y 座標強制綁定為 `birthYear * scaleFactor`。
+   - X 座標仍由 D3 樹狀佈局決定，但連線會因為 Y 座標的改變而拉長。
+
+3. **有出生時間關係的家庭樹 (極座標表示)**：
+   - 將 Y 座標轉化為半徑 (Radius)，核心是最早出生的年份，$R \propto (birthYear - minYear)$。
+   - 角度 (Angle) 則依照家族分支進行分配。
+
+## 介面操作 (UI interactions)
+
+- **Canvas 畫布**：使用 `d3-zoom` 實作畫布的平移 (Pan) 與縮放 (Zoom)。
+- **側邊欄 (Sidebar)**：點擊 SVG/Canvas 上的成員節點時，將選取狀態寫入全域 Store，側邊欄監聽並開啟該成員的表單進行編輯。
+- **匯出/匯入**：提供按鈕將全域 Store 的資料轉換為 JSON 下載，或是讀取 JSON 檔案還原 Store。
+
+## Verification Plan (驗證計畫)
+
+### 1. 手動測試 (Manual Verification)
+這是一個純前端的視覺化應用，主要的驗證將依賴手動的畫面確認：
+- 測試本地環境啟動：執行 `npm run dev` 並在瀏覽器確認畫面成功渲染。
+- 測試新增成員：透過側邊欄新增至少 3 代的成員資料，包含配偶、兄弟姊妹。確認他們在畫面上正確連結。
+- 測試視圖切換：在「一般家庭樹」、「時間垂直對齊」、「極座標」三種模式間切換，確認節點坐標正確轉換，沒有發生錯誤或破版。
+- 測試資料匯出入：點擊「匯出」，將建立好的樹狀圖存為 `.json`，重新整理網頁後點擊「匯入」，確認原本的樹狀圖完整恢復。
