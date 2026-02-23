@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useFamilyStore } from './store';
-import FamilyTreeViewer from './components/FamilyTreeViewer';
+import FamilyTreeViewer, { FamilyTreeViewerRef } from './components/FamilyTreeViewer';
 import Sidebar from './components/Sidebar';
 
 function App() {
   const [viewMode, setViewMode] = useState<'normal' | 'vertical' | 'polar'>('normal');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const viewerRef = useRef<FamilyTreeViewerRef>(null);
 
   const handleExport = () => {
     const data = useFamilyStore.getState().members;
@@ -32,6 +33,14 @@ function App() {
     input.click();
   };
 
+  const handleExportPng = () => {
+    viewerRef.current?.exportAsPNG();
+  };
+
+  const handleExportPdf = () => {
+    viewerRef.current?.exportAsPDF();
+  };
+
   return (
     <div className="w-full h-screen flex flex-col overflow-hidden bg-slate-50 text-slate-800">
       <header className="h-14 bg-white shadow-sm border-b border-slate-200 flex items-center px-4 justify-between shrink-0 z-10">
@@ -48,15 +57,17 @@ function App() {
             <option value="polar">極座標</option>
             <option value="polar-time">時間極座標</option>
           </select>
-          <button onClick={handleExport} className="bg-slate-800 text-white px-4 py-1.5 rounded-md hover:bg-slate-700 text-sm font-medium transition-colors">匯出</button>
-          <button onClick={handleImport} className="bg-slate-100 border border-slate-300 px-4 py-1.5 rounded-md hover:bg-slate-200 text-sm font-medium transition-colors">匯入</button>
+          <button onClick={handleExport} className="bg-slate-800 text-white px-4 py-1.5 rounded-md hover:bg-slate-700 text-sm font-medium transition-colors">匯出 JSON</button>
+          <button onClick={handleImport} className="bg-slate-100 border border-slate-300 px-4 py-1.5 rounded-md hover:bg-slate-200 text-sm font-medium transition-colors">匯入 JSON</button>
+          <button onClick={handleExportPng} className="bg-slate-100 border border-slate-300 px-4 py-1.5 rounded-md hover:bg-slate-200 text-sm font-medium transition-colors">匯出 PNG</button>
+          <button onClick={handleExportPdf} className="bg-slate-100 border border-slate-300 px-4 py-1.5 rounded-md hover:bg-slate-200 text-sm font-medium transition-colors">匯出 PDF</button>
         </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
         {/* 主要畫布 */}
         <main className="flex-1 relative bg-slate-50/50 overflow-hidden">
-          <FamilyTreeViewer viewMode={viewMode} onSelect={setSelectedId} />
+          <FamilyTreeViewer ref={viewerRef} viewMode={viewMode} onSelect={setSelectedId} />
         </main>
 
         {/* 側邊欄 */}
