@@ -45,7 +45,8 @@ function App() {
           >
             <option value="normal">一般家庭樹</option>
             <option value="vertical">時間垂直對齊</option>
-            <option value="polar">時間極座標</option>
+            <option value="polar">極座標</option>
+            <option value="polar-time">時間極座標</option>
           </select>
           <button onClick={handleExport} className="bg-slate-800 text-white px-4 py-1.5 rounded-md hover:bg-slate-700 text-sm font-medium transition-colors">匯出</button>
           <button onClick={handleImport} className="bg-slate-100 border border-slate-300 px-4 py-1.5 rounded-md hover:bg-slate-200 text-sm font-medium transition-colors">匯入</button>
