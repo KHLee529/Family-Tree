@@ -488,6 +488,60 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
                 })
                 .text(d => d.data.spouse!.birthYear);
         }
+
+        // Draw Grid Lines (Year Markers)
+        if (viewMode === 'vertical' || viewMode === 'polar-time') {
+            const gridGroup = g.append('g').attr('class', 'grid-lines');
+            const startYear = Math.floor(minYear / TimeGridStep) * TimeGridStep;
+            const endYear = Math.ceil(maxYear / TimeGridStep) * TimeGridStep;
+
+            for (let year = startYear; year <= endYear; year += TimeGridStep) {
+                if (viewMode === 'vertical') {
+                    const y = (year - minYear) * VerticalYearOffset;
+                    // Draw horizontal line
+                    gridGroup.append('line')
+                        .attr('x1', minX - padding)
+                        .attr('x2', maxX + padding)
+                        .attr('y1', y)
+                        .attr('y2', y)
+                        .attr('stroke', TimeGridLineColor)
+                        .attr('stroke-width', 2)
+                        .attr('stroke-dasharray', TimeGridDashType);
+                    
+                    // Draw year label
+                    gridGroup.append('text')
+                        .attr('x', minX - padding - 10)
+                        .attr('y', y)
+                        .attr('dy', '0.32em')
+                        .attr('text-anchor', 'end')
+                        .attr('fill', TimeGridLabelColor)
+                        .attr('font-size', '12px')
+                        .text(year);
+                } else {
+                    // Polar-time view
+                    const r = (year - minYear) * PolarTimeYearOffset + PolarDepthRadius[0];
+                    // Draw concentric circle
+                    gridGroup.append('circle')
+                        .attr('cx', 0)
+                        .attr('cy', 0)
+                        .attr('r', r)
+                        .attr('fill', 'none')
+                        .attr('stroke', TimeGridLineColor)
+                        .attr('stroke-width', 2)
+                        .attr('stroke-dasharray', TimeGridDashType);
+                    
+                    // Draw year label (at the top)
+                    gridGroup.append('text')
+                        .attr('x', 0)
+                        .attr('y', -r)
+                        .attr('dy', '-0.4em')
+                        .attr('text-anchor', 'middle')
+                        .attr('fill', TimeGridLabelColor)
+                        .attr('font-size', '12px')
+                        .text(year);
+                }
+            }
+        }
     }, [members, viewMode]);
 
     return (
