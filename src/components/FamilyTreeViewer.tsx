@@ -76,7 +76,7 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
             clonedSvg.setAttribute('height', String(imageHeight));
             gInClone.setAttribute('transform', `translate(${-bbox.x + padding}, ${-bbox.y + padding})`);
 
-            toPng(clonedSvg, { width: imageWidth, height: imageHeight, backgroundColor: '#f8fafc' })
+            toPng(clonedSvg, { width: imageWidth, height: imageHeight, backgroundColor: '#ffffff' })
                 .then((dataUrl) => {
                     const link = document.createElement('a');
                     link.download = 'family-tree.png';
@@ -136,6 +136,31 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
 
 
     useEffect(() => {
+        const RectHeight = 60;
+        const RectWidth = 25;
+        const FontSize = '30px';
+        const VerticalYearOffset = 20;
+        const PolarTimeYearOffset = 15;
+        const ShowBirthYear = false;
+        const PolarDepthRadius = [50,800,500,200,200];
+        const SpouseOffset = RectWidth + 10;
+        const PolarSpouseOffset = RectWidth + 10;
+        const VerticalMode = true;
+        const WritingMode = VerticalMode ? 'vertical-rl' : 'horizontal-tb';
+        const TimeGridStep = 10;
+        const MaleBGColor = '#bae6fd';
+        const FemaleBGColor = '#fecdd3';
+        const NonBinBGColor = '#e2e8f0';
+        const TimeGridLineColor = '#b1cdf1';
+        const TimeGridLabelColor = '#94a3b8';
+        const TimeGridDashType = '20 50';
+
+        //const MaleBGColor = '#87ccf1';
+        //const FemaleBGColor = '#fff0f3';
+        //const RectHeight = 75;
+        //const FontSize = '45px';
+        //const PolarDepthRadius = [0,550,200,200,200];
+
         if (!svgRef.current || !containerRef.current) return;
         const svg = d3.select(svgRef.current);
         const width = containerRef.current.clientWidth;
@@ -153,8 +178,13 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
         if (!treeData) return;
 
         const root = d3.hierarchy<TreeNode>(treeData);
-        const treeLayout = d3.tree<TreeNode>().nodeSize([220, 120]);
-        treeLayout(root);
+
+        // Conditionally use cluster layout for polar views for even distribution
+        if (viewMode.startsWith('polar')) {
+            d3.cluster<TreeNode>().nodeSize([250, 120])(root);
+        } else {
+            d3.tree<TreeNode>().nodeSize([200, 120])(root);
+        }
 
         // Get bounds of the tree
         let minX = 0, maxX = 0, minY = 0, maxY = 0;
@@ -176,34 +206,42 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
 
         svg.call(zoom.transform, d3.zoomIdentity.translate(initialX, initialY).scale(initialScale));
 
+        // Calculate year range for time-based views
+        const allDescendants = root.descendants();
+        const minYear = d3.min(allDescendants, d => d.data.member.birthYear) || 1900;
+        const maxYear = d3.max(allDescendants, d => d.data.member.birthYear) || new Date().getFullYear();
 
         // 依據 viewMode 調整 y 座標 (半徑)
         if (viewMode === 'vertical') {
-            const minYear = d3.min(root.descendants(), d => d.data.member.birthYear) || 1900;
             root.each(d => {
                 // 每 1 年對應 12px 高度
-                d.y = (d.data.member.birthYear - minYear) * 12;
+                d.y = (d.data.member.birthYear - minYear) * VerticalYearOffset;
             });
         } else if (viewMode.startsWith('polar')) {
-            const minYear = d3.min(root.descendants(), d => d.data.member.birthYear) || 1900;
-            let minX = d3.min(root.descendants(), d => (d as any).x as number) || 0;
-            let maxX = d3.max(root.descendants(), d => (d as any).x as number) || 1;
-            if (minX === maxX) { minX -= 1; maxX += 1; } // 防呆
+            // Use d3.partition to allocate angle space based on the number of leaf nodes,
+            // factoring in whether the leaf has a spouse (which makes it wider).
+            root.sum(d => d.children.length === 0 ? (d.spouse ? 1.8 : 1) : 0); 
+
+            // Partition layout gives us proportional angles d.x0 and d.x1
+            d3.partition().size([2 * Math.PI, root.height + 1])(root);
 
             root.each(d => {
-                let r: number;
+                let r: number = 0;
                 if (viewMode === 'polar-time') {
-                    r = (d.data.member.birthYear - minYear) * 15 + 150;
+                    r = (d.data.member.birthYear - minYear) * PolarTimeYearOffset + PolarDepthRadius[0];
                 } else {
-                    r = d.depth * 250 + 150;
+                    // Increase radius step to provide more tangential space
+                    for (let i = 0; i <= d.depth; i++) {
+                        r += PolarDepthRadius[i];
+                    }
                 }
 
-                const angleRange = Math.PI * 1.8;
-                const dx = (d as any).x || 0;
-                const theta = ((dx - minX) / (maxX - minX)) * angleRange - angleRange / 2;
+                // The angle is the midpoint of the partition arc.
+                const theta = (d.x0 + d.x1) / 2;
 
                 (d as any).theta = theta;
                 (d as any).r = r;
+                // Use the original cartesian conversion to maintain compatibility with downstream drawing logic
                 (d as any).x = r * Math.sin(theta);
                 (d as any).y = -r * Math.cos(theta);
             });
@@ -221,26 +259,28 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
                 if (viewMode.startsWith('polar')) {
                     const sourceTheta = (d.source as any).theta || 0;
                     let sourceR = (d.source as any).r || 0;
+                    let spouseR = 0;
 
                     if (d.source.data.spouse) {
                         if (viewMode === 'polar-time') {
-                            const spouseR = sourceR + ((d.source.data.spouse.birthYear - d.source.data.member.birthYear) * 15);
+                            spouseR = sourceR + ((d.source.data.spouse.birthYear - d.source.data.member.birthYear) * PolarTimeYearOffset);
                             sourceR = (sourceR + spouseR) / 2;
                         }
                     }
-                    sourceR += 25;
 
                     let targetTheta = (d.target as any).theta || 0;
                     let targetR = (d.target as any).r || 0;
 
                     if (d.target.data.spouse) {
                         const isTargetMale = d.target.data.member.gender !== 'F';
-                        const localX = isTargetMale ? 65 : -65;
+                        const localX = isTargetMale ? -PolarSpouseOffset : PolarSpouseOffset;
                         targetTheta += -localX / targetR;
                     }
 
-                    targetR -= 25;
-                    const midR = (sourceR + targetR) / 2;
+                    targetR -= RectHeight;
+                    //let midR = (sourceR + targetR) / 2;
+                    let midR = (spouseR == 0 ? sourceR : Math.max(sourceR, spouseR)) + 100;
+                    if (midR - sourceR < RectHeight) midR = sourceR + RectHeight + 25;
 
                     const p1x = sourceR * Math.sin(sourceTheta);
                     const p1y = -sourceR * Math.cos(sourceTheta);
@@ -259,32 +299,31 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
 
                 let sx = d.source.x || 0;
                 let sy = d.source.y || 0;
-                let parentBottomY = sy + 25;
+                let parentBottomY = sy + RectHeight;
 
                 if (d.source.data.spouse) {
                     if (viewMode === 'vertical') {
-                        const isSourceMale = d.source.data.member.gender !== 'F';
-                        sx += isSourceMale ? 0 : 0;
-                        const dy = ((d.source.data.spouse.birthYear - d.source.data.member.birthYear) * 12);
+                        const dy = ((d.source.data.spouse.birthYear - d.source.data.member.birthYear) * VerticalYearOffset);
                         sy += dy / 2;
-                        parentBottomY = Math.max(sy + 25, (d.source.y || 0) + dy + 25);
+                        parentBottomY = Math.max(sy + RectHeight, (d.source.y || 0) + dy + RectHeight);
                     } else {
-                        parentBottomY = sy + 25;
+                        parentBottomY = sy + RectHeight;
                     }
                 } else {
-                    sy += 25;
+                    sy += RectHeight;
                 }
 
                 let tx = d.target.x || 0;
                 let ty = d.target.y || 0;
 
-                if (viewMode !== 'vertical' && d.target.data.spouse) {
+                if (d.target.data.spouse) {
                     const isTargetMale = d.target.data.member.gender !== 'F';
-                    tx += isTargetMale ? -60 : 60;
+                    tx += isTargetMale ? -SpouseOffset : SpouseOffset;
                 }
-                ty -= 25;
+                ty -= RectHeight;
 
                 let midY = (sy + ty) / 2;
+                midY = sy + RectHeight * 2;
                 if (midY < parentBottomY + 15) {
                     midY = parentBottomY + 15;
                 }
@@ -307,9 +346,9 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
                 let translation = `translate(0, 0)`;
                 if (d.data.spouse) {
                     if (viewMode === 'normal' || viewMode === 'vertical') {
-                        translation = isMale ? `translate(-60, 0)` : `translate(60, 0)`;
+                        translation = isMale ? `translate(-${SpouseOffset}, 0)` : `translate(${SpouseOffset}, 0)`;
                     } else if (viewMode.startsWith('polar')) {
-                        translation = isMale ? `translate(65, 0)` : `translate(-65, 0)`;
+                        translation = isMale ? `translate(-${PolarSpouseOffset}, 0)` : `translate(${PolarSpouseOffset}, 0)`;
                     }
                 }
                 return `rotate(${deg}) ${translation}`;
@@ -321,48 +360,67 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
             });
 
         memberGroup.append('rect')
-            .attr('x', -45).attr('y', -25).attr('width', 90).attr('height', 50).attr('rx', 8)
-            .attr('fill', d => d.data.member.gender === 'M' ? '#bae6fd' : d.data.member.gender === 'F' ? '#fecdd3' : '#e2e8f0')
+            .attr('x', -RectWidth)
+            .attr('y', -RectHeight)
+            .attr('width', RectWidth * 2)
+            .attr('height', RectHeight * 2)
+            .attr('rx', 8)
+            .attr('fill', d => d.data.member.gender === 'M' ? MaleBGColor : d.data.member.gender === 'F' ? FemaleBGColor : NonBinBGColor)
             .attr('stroke', '#64748b').attr('stroke-width', 1);
 
-        memberGroup.append('text').attr('dy', -2).attr('text-anchor', 'middle').attr('font-size', '14px').attr('font-weight', '500').attr('fill', '#1e293b')
+        memberGroup.append('text')
+            .attr('writing-mode', WritingMode)
+            .attr('dy', -2)
+            .attr('text-anchor', 'middle')
+            .attr('font-size', FontSize)
+            .attr('font-weight', '500')
+            .attr('fill', '#1e293b')
             .attr('transform', d => {
                 if (viewMode.startsWith('polar')) {
                     let deg = ((d as any).theta * 180 / Math.PI + 180) % 360;
                     if (deg < 0) deg += 360;
-                    if (deg > 90 && deg < 270) return `rotate(180) translate(0, -4)`;
+                    //if (deg > 90 && deg < 270) return `rotate(180) translate(0, -4)`;
                 }
                 return ``;
             }).text(d => d.data.member.name);
 
-        memberGroup.append('text').attr('dy', 16).attr('text-anchor', 'middle').attr('font-size', '11px').attr('fill', '#64748b')
-            .attr('transform', d => {
-                if (viewMode.startsWith('polar')) {
-                    let deg = ((d as any).theta * 180 / Math.PI + 180) % 360;
-                    if (deg < 0) deg += 360;
-                    if (deg > 90 && deg < 270) return `rotate(180) translate(0, -32)`;
-                }
-                return ``;
-            }).text(d => d.data.member.birthYear);
+        if (ShowBirthYear) {
+            memberGroup.append('text')
+                .attr('dy', 16)
+                .attr('text-anchor', 'middle')
+                .attr('font-size', '11px')
+                .attr('fill', '#64748b')
+                .attr('transform', d => {
+                    if (viewMode.startsWith('polar')) {
+                        let deg = ((d as any).theta * 180 / Math.PI + 180) % 360;
+                        if (deg < 0) deg += 360;
+                        //if (deg > 90 && deg < 270) return `rotate(180) translate(0, -32)`;
+                    }
+                    return ``;
+                }).text(d => d.data.member.birthYear);
+        }
 
         const spouseNodes = nodeGroup.filter(d => !!d.data.spouse);
 
-        spouseNodes.append('path').attr('fill', 'none').attr('stroke', '#94a3b8').attr('stroke-width', 2)
+        spouseNodes.append('path')
+            .attr('fill', 'none')
+            .attr('stroke', '#94a3b8')
+            .attr('stroke-width', 2)
             .attr('d', d => {
                 const isMemberMale = d.data.member.gender !== 'F';
                 if (viewMode === 'vertical') {
-                    const dy = (d.data.spouse!.birthYear - d.data.member.birthYear) * 12;
+                    const dy = (d.data.spouse!.birthYear - d.data.member.birthYear) * VerticalYearOffset;
                     const startX = isMemberMale ? -15 : 15;
                     const endX = isMemberMale ? 15 : -15;
                     return `M ${startX},0 L 0,0 L 0,${dy} L ${endX},${dy}`;
                 } else if (viewMode === 'polar-time') {
-                    const dr = (d.data.spouse!.birthYear - d.data.member.birthYear) * 15;
-                    const startX = isMemberMale ? 20 : -20;
-                    const endX = isMemberMale ? -20 : 20;
-                    return `M ${startX},0 L 0,0 L 0,${-dr} L ${endX},${-dr}`;
+                    const dr = (d.data.spouse!.birthYear - d.data.member.birthYear) * PolarTimeYearOffset;
+                    const startX = isMemberMale ? -20 : 20;
+                    const endX = isMemberMale ? 20 : -20;
+                    return `M ${startX},0 L 0,0 L 0,${dr} L ${endX},${dr}`;
                 } else {
-                    const startX = viewMode.startsWith('polar') ? (isMemberMale ? 20 : -20) : (isMemberMale ? -15 : 15);
-                    const endX = viewMode.startsWith('polar') ? (isMemberMale ? -20 : 20) : (isMemberMale ? 15 : -15);
+                    const startX = viewMode.startsWith('polar') ? (isMemberMale ? 10 : -10) : (isMemberMale ? -15 : 15);
+                    const endX = viewMode.startsWith('polar') ? (isMemberMale ? -10 : 10) : (isMemberMale ? 15 : -15);
                     return `M ${startX},0 L ${endX},0`;
                 }
             }).attr('transform', d => `rotate(${viewMode.startsWith('polar') ? ((d as any).theta * 180 / Math.PI + 180) : 0})`);
@@ -373,45 +431,63 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
                 let deg = viewMode.startsWith('polar') ? ((d as any).theta * 180 / Math.PI + 180) : 0;
 
                 if (viewMode === 'vertical') {
-                    const dy = (d.data.spouse!.birthYear - d.data.member.birthYear) * 12;
-                    const xOffset = isMemberMale ? 60 : -60;
+                    const dy = (d.data.spouse!.birthYear - d.data.member.birthYear) * VerticalYearOffset;
+                    const xOffset = isMemberMale ? SpouseOffset : -SpouseOffset;
                     return `rotate(${deg}) translate(${xOffset}, ${dy})`;
                 } else if (viewMode === 'polar-time') {
-                    const dr = (d.data.spouse!.birthYear - d.data.member.birthYear) * 15;
-                    const xOffset = isMemberMale ? -65 : 65;
-                    return `rotate(${deg}) translate(${xOffset}, ${-dr})`;
+                    const dr = (d.data.spouse!.birthYear - d.data.member.birthYear) * PolarTimeYearOffset;
+                    const xOffset = isMemberMale ? PolarSpouseOffset : -PolarSpouseOffset;
+                    return `rotate(${deg}) translate(${xOffset}, ${dr})`;
                 } else {
-                    const xOffset = viewMode.startsWith('polar') ? (isMemberMale ? -65 : 65) : (isMemberMale ? 60 : -60);
+                    const xOffset = viewMode.startsWith('polar') ? (isMemberMale ? PolarSpouseOffset : -PolarSpouseOffset) : (isMemberMale ? SpouseOffset : -SpouseOffset);
                     return `rotate(${deg}) translate(${xOffset}, 0)`;
                 }
             })
             .attr('class', 'spouse-group').attr('cursor', 'pointer')
             .on('click', (event, d) => { event.stopPropagation(); onSelect(d.data.spouse!.id); });
 
-        spouseGroup.append('rect').attr('x', -45).attr('y', -25).attr('width', 90).attr('height', 50).attr('rx', 8)
-            .attr('fill', d => d.data.spouse!.gender === 'M' ? '#bae6fd' : d.data.spouse!.gender === 'F' ? '#fecdd3' : '#e2e8f0')
+        spouseGroup.append('rect')
+            .attr('x', -RectWidth)
+            .attr('y', -RectHeight)
+            .attr('width', RectWidth * 2)
+            .attr('height', RectHeight * 2)
+            .attr('rx', 8)
+            .attr('fill', d => d.data.spouse!.gender === 'M' ? MaleBGColor : d.data.spouse!.gender === 'F' ? FemaleBGColor : NonBinBGColor)
             .attr('stroke', '#64748b').attr('stroke-width', 1);
 
-        spouseGroup.append('text').attr('dy', -2).attr('text-anchor', 'middle').attr('font-size', '14px').attr('font-weight', '500').attr('fill', '#1e293b')
+        spouseGroup.append('text')
+            .attr('writing-mode', WritingMode)
+            .attr('dy', -2)
+            .attr('text-anchor', 'middle')
+            .attr('font-size', FontSize)
+            .attr('font-weight', '500')
+            .attr('fill', '#1e293b')
             .attr('transform', d => {
                 if (viewMode.startsWith('polar')) {
                     let deg = ((d as any).theta * 180 / Math.PI + 180) % 360;
                     if (deg < 0) deg += 360;
-                    if (deg > 90 && deg < 270) return `rotate(180) translate(0, -4)`;
+                    //if (deg > 90 && deg < 270) return `rotate(180) translate(0, -4)`;
                 }
                 return ``;
-            }).text(d => d.data.spouse!.name);
+            })
+            .text(d => d.data.spouse!.name);
 
-        spouseGroup.append('text').attr('dy', 16).attr('text-anchor', 'middle').attr('font-size', '11px').attr('fill', '#64748b')
-            .attr('transform', d => {
-                if (viewMode.startsWith('polar')) {
-                    let deg = ((d as any).theta * 180 / Math.PI + 180) % 360;
-                    if (deg < 0) deg += 360;
-                    if (deg > 90 && deg < 270) return `rotate(180) translate(0, -32)`;
-                }
-                return ``;
-            }).text(d => d.data.spouse!.birthYear);
-
+        if (ShowBirthYear) {
+            spouseGroup.append('text')
+                .attr('dy', 16)
+                .attr('text-anchor', 'middle')
+                .attr('font-size', '11px')
+                .attr('fill', '#64748b')
+                .attr('transform', d => {
+                    if (viewMode.startsWith('polar')) {
+                        let deg = ((d as any).theta * 180 / Math.PI + 180) % 360;
+                        if (deg < 0) deg += 360;
+                        //if (deg > 90 && deg < 270) return `rotate(180) translate(0, -32)`;
+                    }
+                    return ``;
+                })
+                .text(d => d.data.spouse!.birthYear);
+        }
     }, [members, viewMode]);
 
     return (
