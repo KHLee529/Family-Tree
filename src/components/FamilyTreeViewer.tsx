@@ -62,7 +62,7 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
             const originalTransform = gElement.getAttribute('transform');
             gElement.setAttribute('transform', '');
             const bbox = gElement.getBBox();
-            gElement.setAttribute('transform', originalTransform);
+            gElement.setAttribute('transform', originalTransform || '');
 
             const clonedSvg = svgElement.cloneNode(true) as SVGSVGElement;
             const gInClone = clonedSvg.querySelector('g');
@@ -76,7 +76,7 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
             clonedSvg.setAttribute('height', String(imageHeight));
             gInClone.setAttribute('transform', `translate(${-bbox.x + padding}, ${-bbox.y + padding})`);
 
-            toPng(clonedSvg, { width: imageWidth, height: imageHeight, backgroundColor: '#ffffff' })
+            toPng(clonedSvg as unknown as HTMLElement, { width: imageWidth, height: imageHeight, backgroundColor: '#ffffff' })
                 .then((dataUrl) => {
                     const link = document.createElement('a');
                     link.download = 'family-tree.png';
@@ -99,7 +99,7 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
             const originalTransform = gElement.getAttribute('transform');
             gElement.setAttribute('transform', '');
             const bbox = gElement.getBBox();
-            gElement.setAttribute('transform', originalTransform);
+            gElement.setAttribute('transform', originalTransform || '');
 
             const clonedSvg = svgElement.cloneNode(true) as SVGSVGElement;
             const gInClone = clonedSvg.querySelector('g');
@@ -113,7 +113,7 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
             clonedSvg.setAttribute('height', String(imageHeight));
             gInClone.setAttribute('transform', `translate(${-bbox.x + padding}, ${-bbox.y + padding})`);
 
-            toPng(clonedSvg, { width: imageWidth, height: imageHeight, backgroundColor: '#f8fafc' })
+            toPng(clonedSvg as unknown as HTMLElement, { width: imageWidth, height: imageHeight, backgroundColor: '#f8fafc' })
                 .then((dataUrl) => {
                     const img = new Image();
                     img.src = dataUrl;
@@ -201,10 +201,10 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
         // Get bounds of the tree
         let minX = 0, maxX = 0, minY = 0, maxY = 0;
         root.each(d => {
-            if (d.x < minX) minX = d.x;
-            if (d.x > maxX) maxX = d.x;
-            if (d.y < minY) minY = d.y;
-            if (d.y > maxY) maxY = d.y;
+            if (d.x !== undefined && d.x < minX) minX = d.x;
+            if (d.x !== undefined && d.x > maxX) maxX = d.x;
+            if (d.y !== undefined && d.y < minY) minY = d.y;
+            if (d.y !== undefined && d.y > maxY) maxY = d.y;
         });
 
         // Add some padding
@@ -233,14 +233,14 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
             // Calculate shared turning point for vertical mode to ensure clean lines
             root.each(d => {
                 if (d.children && d.children.length > 0) {
-                    let sy = d.y;
+                    let sy = d.y || 0;
                     let parentBottomY = sy + RectHeight;
                     if (d.data.spouse) {
                         const dy = ((d.data.spouse.birthYear - d.data.member.birthYear) * VerticalYearOffset);
                         parentBottomY = Math.max(parentBottomY, sy + dy + RectHeight);
                     }
-                    
-                    const minChildTopY = d3.min(d.children, c => c.y - RectHeight) as number;
+
+                    const minChildTopY = d3.min(d.children, c => (c.y || 0) - RectHeight) as number;
                     (d as any).sharedMidY = (parentBottomY + minChildTopY) / 2;
                 }
             });
@@ -250,7 +250,7 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
             root.sum(d => d.children.length === 0 ? (d.spouse ? 1.8 : 1) : 0);
 
             // Partition layout gives us proportional angles d.x0 and d.x1
-            d3.partition().size([2 * Math.PI, root.height + 1])(root);
+            d3.partition<TreeNode>().size([2 * Math.PI, root.height + 1])(root);
 
             root.each(d => {
                 let r: number = 0;
@@ -264,7 +264,7 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
                 }
 
                 // The angle is the midpoint of the partition arc.
-                const theta = (d.x0 + d.x1) / 2;
+                const theta = ((d as any).x0 + (d as any).x1) / 2;
 
                 (d as any).theta = theta;
                 (d as any).r = r;
@@ -326,7 +326,7 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
 
                 let sx = d.source.x || 0;
                 let sy = d.source.y || 0;
-                
+
                 // Calculate the bottom-most edge of the parent node (considering spouse in vertical mode)
                 let parentBottomY = sy + RectHeight;
 
