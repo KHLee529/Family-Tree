@@ -95,7 +95,7 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
                 console.error("SVG elements not found");
                 return;
             }
-            
+
             const originalTransform = gElement.getAttribute('transform');
             gElement.setAttribute('transform', '');
             const bbox = gElement.getBBox();
@@ -136,13 +136,14 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
 
 
     useEffect(() => {
-        const RectHeight = 60;
-        const RectWidth = 25;
-        const FontSize = '30px';
+        const RectHeight = 80;
+        const RectWidth = 30;
+        const NameFontSize = '35px';
+        const BirthYearFontSize = '20px';
         const VerticalYearOffset = 20;
         const PolarTimeYearOffset = 15;
-        const ShowBirthYear = false;
-        const PolarDepthRadius = [50,800,500,200,200];
+        const ShowBirthYear = true;
+        const PolarDepthRadius = [0, 300, 300, 250, 200];
         const SpouseOffset = RectWidth + 10;
         const PolarSpouseOffset = RectWidth + 10;
         const VerticalMode = true;
@@ -154,6 +155,10 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
         const TimeGridLineColor = '#b1cdf1';
         const TimeGridLabelColor = '#94a3b8';
         const TimeGridDashType = '20 50';
+        const PolarNodeWidth = RectWidth * 4 + 40; // Polar view needs more space
+        const CompactNodeWidth = 100; // More compact base width for normal/vertical
+        const NodeHeight = RectHeight * 2 + 80;
+        const GenerationColors = ['#355070', '#B56576', '#EAAC8B', '#6D597A', '#E56B6F', '#6366f1', '#8b5cf6'];
 
         //const MaleBGColor = '#87ccf1';
         //const FemaleBGColor = '#fff0f3';
@@ -173,7 +178,7 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
             .on('zoom', (event) => g.attr('transform', event.transform));
 
         svg.call(zoom);
-        
+
         const treeData = buildTree(members);
         if (!treeData) return;
 
@@ -181,9 +186,16 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
 
         // Conditionally use cluster layout for polar views for even distribution
         if (viewMode.startsWith('polar')) {
-            d3.cluster<TreeNode>().nodeSize([250, 120])(root);
+            d3.cluster<TreeNode>().nodeSize([PolarNodeWidth, NodeHeight])(root);
         } else {
-            d3.tree<TreeNode>().nodeSize([200, 120])(root);
+            d3.tree<TreeNode>()
+                .nodeSize([CompactNodeWidth, NodeHeight])
+                .separation((a, b) => {
+                    const aSpouse = !!a.data.spouse;
+                    const bSpouse = !!b.data.spouse;
+                    const sep = 1 + (aSpouse ? 0.6 : 0) + (bSpouse ? 0.6 : 0);
+                    return (a.parent === b.parent ? 1 : 1.1) * sep;
+                })(root);
         }
 
         // Get bounds of the tree
@@ -217,10 +229,25 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
                 // 每 1 年對應 12px 高度
                 d.y = (d.data.member.birthYear - minYear) * VerticalYearOffset;
             });
+
+            // Calculate shared turning point for vertical mode to ensure clean lines
+            root.each(d => {
+                if (d.children && d.children.length > 0) {
+                    let sy = d.y;
+                    let parentBottomY = sy + RectHeight;
+                    if (d.data.spouse) {
+                        const dy = ((d.data.spouse.birthYear - d.data.member.birthYear) * VerticalYearOffset);
+                        parentBottomY = Math.max(parentBottomY, sy + dy + RectHeight);
+                    }
+                    
+                    const minChildTopY = d3.min(d.children, c => c.y - RectHeight) as number;
+                    (d as any).sharedMidY = (parentBottomY + minChildTopY) / 2;
+                }
+            });
         } else if (viewMode.startsWith('polar')) {
             // Use d3.partition to allocate angle space based on the number of leaf nodes,
             // factoring in whether the leaf has a spouse (which makes it wider).
-            root.sum(d => d.children.length === 0 ? (d.spouse ? 1.8 : 1) : 0); 
+            root.sum(d => d.children.length === 0 ? (d.spouse ? 1.8 : 1) : 0);
 
             // Partition layout gives us proportional angles d.x0 and d.x1
             d3.partition().size([2 * Math.PI, root.height + 1])(root);
@@ -280,7 +307,7 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
                     targetR -= RectHeight;
                     //let midR = (sourceR + targetR) / 2;
                     let midR = (spouseR == 0 ? sourceR : Math.max(sourceR, spouseR)) + 100;
-                    if (midR - sourceR < RectHeight) midR = sourceR + RectHeight + 25;
+                    if (midR - sourceR < RectHeight + 50) midR = sourceR + RectHeight + 50;
 
                     const p1x = sourceR * Math.sin(sourceTheta);
                     const p1y = -sourceR * Math.cos(sourceTheta);
@@ -299,35 +326,33 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
 
                 let sx = d.source.x || 0;
                 let sy = d.source.y || 0;
+                
+                // Calculate the bottom-most edge of the parent node (considering spouse in vertical mode)
                 let parentBottomY = sy + RectHeight;
 
                 if (d.source.data.spouse) {
                     if (viewMode === 'vertical') {
                         const dy = ((d.source.data.spouse.birthYear - d.source.data.member.birthYear) * VerticalYearOffset);
-                        sy += dy / 2;
-                        parentBottomY = Math.max(sy + RectHeight, (d.source.y || 0) + dy + RectHeight);
-                    } else {
-                        parentBottomY = sy + RectHeight;
+                        // If spouse is drawn lower, the connection point should account for it to avoid overlap
+                        parentBottomY = Math.max(parentBottomY, sy + dy + RectHeight);
                     }
-                } else {
-                    sy += RectHeight;
                 }
 
                 let tx = d.target.x || 0;
                 let ty = d.target.y || 0;
+                let childTopY = ty - RectHeight;
 
                 if (d.target.data.spouse) {
                     const isTargetMale = d.target.data.member.gender !== 'F';
                     tx += isTargetMale ? -SpouseOffset : SpouseOffset;
                 }
-                ty -= RectHeight;
 
-                let midY = (sy + ty) / 2;
-                midY = sy + RectHeight * 2;
-                if (midY < parentBottomY + 15) {
-                    midY = parentBottomY + 15;
-                }
-                return `M ${sx},${sy} L ${sx},${midY} L ${tx},${midY} L ${tx},${ty}`;
+                // Calculate the turning point exactly in the middle of the gap
+                let midY = (viewMode === 'vertical' && (d.source as any).sharedMidY !== undefined)
+                    ? (d.source as any).sharedMidY
+                    : (parentBottomY + childTopY) / 2;
+
+                return `M ${sx},${sy} L ${sx},${midY} L ${tx},${midY} L ${tx},${childTopY}`;
             });
 
         const nodeGroup = g.selectAll('.node')
@@ -366,13 +391,14 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
             .attr('height', RectHeight * 2)
             .attr('rx', 8)
             .attr('fill', d => d.data.member.gender === 'M' ? MaleBGColor : d.data.member.gender === 'F' ? FemaleBGColor : NonBinBGColor)
-            .attr('stroke', '#64748b').attr('stroke-width', 1);
+            .attr('stroke', d => GenerationColors[d.depth % GenerationColors.length])
+            .attr('stroke-width', 5);
 
         memberGroup.append('text')
             .attr('writing-mode', WritingMode)
             .attr('dy', -2)
             .attr('text-anchor', 'middle')
-            .attr('font-size', FontSize)
+            .attr('font-size', NameFontSize)
             .attr('font-weight', '500')
             .attr('fill', '#1e293b')
             .attr('transform', d => {
@@ -386,9 +412,9 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
 
         if (ShowBirthYear) {
             memberGroup.append('text')
-                .attr('dy', 16)
+                .attr('dy', RectHeight * 0.9)
                 .attr('text-anchor', 'middle')
-                .attr('font-size', '11px')
+                .attr('font-size', BirthYearFontSize)
                 .attr('fill', '#64748b')
                 .attr('transform', d => {
                     if (viewMode.startsWith('polar')) {
@@ -453,13 +479,14 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
             .attr('height', RectHeight * 2)
             .attr('rx', 8)
             .attr('fill', d => d.data.spouse!.gender === 'M' ? MaleBGColor : d.data.spouse!.gender === 'F' ? FemaleBGColor : NonBinBGColor)
-            .attr('stroke', '#64748b').attr('stroke-width', 1);
+            .attr('stroke', d => GenerationColors[d.depth % GenerationColors.length])
+            .attr('stroke-width', 5);
 
         spouseGroup.append('text')
             .attr('writing-mode', WritingMode)
             .attr('dy', -2)
             .attr('text-anchor', 'middle')
-            .attr('font-size', FontSize)
+            .attr('font-size', NameFontSize)
             .attr('font-weight', '500')
             .attr('fill', '#1e293b')
             .attr('transform', d => {
@@ -474,9 +501,9 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
 
         if (ShowBirthYear) {
             spouseGroup.append('text')
-                .attr('dy', 16)
+                .attr('dy', RectHeight * 0.9)
                 .attr('text-anchor', 'middle')
-                .attr('font-size', '11px')
+                .attr('font-size', BirthYearFontSize)
                 .attr('fill', '#64748b')
                 .attr('transform', d => {
                     if (viewMode.startsWith('polar')) {
@@ -507,7 +534,7 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
                         .attr('stroke', TimeGridLineColor)
                         .attr('stroke-width', 2)
                         .attr('stroke-dasharray', TimeGridDashType);
-                    
+
                     // Draw year label
                     gridGroup.append('text')
                         .attr('x', minX - padding - 10)
@@ -529,7 +556,7 @@ const FamilyTreeViewer = forwardRef<FamilyTreeViewerRef, ViewerProps>(({ viewMod
                         .attr('stroke', TimeGridLineColor)
                         .attr('stroke-width', 2)
                         .attr('stroke-dasharray', TimeGridDashType);
-                    
+
                     // Draw year label (at the top)
                     gridGroup.append('text')
                         .attr('x', 0)
