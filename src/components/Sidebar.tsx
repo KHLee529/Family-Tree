@@ -46,6 +46,12 @@ export default function Sidebar({ selectedId, onClose }: SidebarProps) {
                 <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
 
+            {formData.photoUrl && (
+                <div className="flex justify-center my-2">
+                    <img src={formData.photoUrl} alt="個人照片" className="w-32 h-32 object-cover rounded-full border-4 border-white shadow-sm" />
+                </div>
+            )}
+
             <div className="flex flex-col gap-3 text-sm">
                 <label className="flex flex-col">
                     <span className="text-slate-600 mb-1">姓名</span>

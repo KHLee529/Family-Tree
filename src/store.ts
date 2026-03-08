@@ -57,6 +57,7 @@ export const useFamilyStore = create<FamilyState>((set) => ({
         yearSpacing: 20,
         generationSpacingNormal: 240,
         polarGenerationRadii: [300, 300, 250, 200, 200, 200, 200, 200, 200, 200], // Pre-populate some defaults
+        fontSize: 35,
     },
     updateUIConfig: (config) =>
         set((state) => ({

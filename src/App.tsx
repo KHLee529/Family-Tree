@@ -42,17 +42,91 @@ function App() {
 
   const maxDepth = useMemo(() => getTreeMaxDepth(members), [members]);
 
-  // Dynamically calculate the safe minimum generation spacing to prevent overlap
-  const minSpacing = useMemo(() => {
+  // Dynamically calculate safe minimum boundaries to prevent overlap in Normal and Polar views
+  const { minSpacing, minPolarRadii } = useMemo(() => {
     const isHorizontal = uiConfig.nodeWritingMode === 'horizontal-tb';
     const allMembersArr = Object.values(members);
     const maxNameWidth = Math.max(...allMembersArr.map(m => getStringVisualWidth(m.name)), 2);
 
-    // Calculate RectHeight just like FamilyTreeViewer does
-    const RectHeight = isHorizontal ? 40 : Math.max(80, (maxNameWidth * 17.5) + 30);
-    // Return distance + safety padding
-    return Math.ceil(RectHeight * 2 + 50);
-  }, [members, uiConfig.nodeWritingMode]);
+    const textLength = maxNameWidth * uiConfig.fontSize;
+    const padding = uiConfig.fontSize; // Total padding space (equivalent to 2 English characters)
+
+    let RectWidth = 30;
+    let RectHeight = 80;
+
+    if (isHorizontal) {
+      RectWidth = (textLength + padding) / 2;
+      RectHeight = (uiConfig.fontSize * 1.8) / 2;
+    } else {
+      RectWidth = (uiConfig.fontSize * 1.8) / 2;
+      RectHeight = (textLength + padding) / 2;
+    }
+
+    const minS = Math.ceil(RectHeight * 2 + 50);
+
+    // Calculate level density to enforce polar tangential constraints safely using Arcsin
+    // We must categorize nodes per generation by single vs couple to determine true bounding radius
+    const isParent = (id: string) => allMembersArr.some(m => m.parentId1 === id);
+    const root = allMembersArr.find(m => !m.parentId1 && isParent(m.id)) || allMembersArr.find(m => !m.parentId1);
+
+    const nodesByDepth: Record<number, { isCouple: boolean }[]> = {};
+    if (root) {
+      function traverse(id: string, depth: number) {
+        const m = members[id];
+        if (!nodesByDepth[depth]) nodesByDepth[depth] = [];
+        nodesByDepth[depth].push({ isCouple: !!m?.spouseId });
+
+        const children = allMembersArr.filter(child => child.parentId1 === id || (m?.spouseId && child.parentId1 === m.spouseId));
+        children.forEach(c => traverse(c.id, depth + 1));
+      }
+      traverse(root.id, 0);
+    }
+
+    const SpouseGap = 40;
+    const PolarSpouseOffset = RectWidth + SpouseGap;
+
+    // SVG coordinate math: Single node centers perfectly. Couple shifts left/right by PolarSpouseOffset.
+    const singleBoundR = Math.sqrt(Math.pow(RectWidth / 2, 2) + Math.pow(RectHeight / 2, 2));
+    const coupleBoundR = Math.sqrt(Math.pow((PolarSpouseOffset + RectWidth) / 2, 2) + Math.pow(RectHeight / 2, 2));
+
+    const minRadii: number[] = [];
+    let currentR = 0;
+
+    // Check up to maxDepth to establish mathematically un-collidable minimum radii
+    for (let depth = 0; depth <= maxDepth; depth++) {
+      let requiredAbsoluteR = currentR + minS;
+      const nodesAtDepth = nodesByDepth[depth] || [];
+
+      let sumAsin = Math.PI + 1;
+      let limitIterations = 0;
+
+      // Iteratively increase required R until the sum of all absolute arcs is <= PI (Half the circle for semi-angles)
+      while (sumAsin > Math.PI && limitIterations < 1000) {
+        sumAsin = 0;
+        for (const n of nodesAtDepth) {
+          const boundR = n.isCouple ? coupleBoundR : singleBoundR;
+
+          // If the bounding circle is nearly identical to to current Radius, it blocks the whole circle
+          if ((boundR + 20) >= requiredAbsoluteR) {
+            sumAsin += Math.PI;
+          } else {
+            sumAsin += Math.asin((boundR + 20) / requiredAbsoluteR);
+          }
+        }
+        if (sumAsin > Math.PI) {
+          requiredAbsoluteR += 30; // Push minimum slider requirement outwards
+        }
+        limitIterations++;
+      }
+
+      // The step size for this specific generation's slider
+      let step = requiredAbsoluteR - currentR;
+      minRadii[depth] = Math.max(minS, Math.ceil(step));
+      currentR += minRadii[depth];
+    }
+
+    return { minSpacing: minS, minPolarRadii: minRadii };
+  }, [members, uiConfig.nodeWritingMode, uiConfig.fontSize, maxDepth]);
 
   const maxSpacingNormal = Math.max(800, minSpacing + 400);
 
@@ -91,9 +165,9 @@ function App() {
 
   return (
     <div className="w-full h-screen flex flex-col overflow-hidden bg-slate-50 text-slate-800">
-      <header className="h-14 bg-white shadow-sm border-b border-slate-200 flex items-center px-4 justify-between shrink-0 z-10">
-        <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-teal-500">Family Tree</h1>
-        <div className="flex gap-2">
+      <header className="min-h-[56px] py-2 bg-white shadow-sm border-b border-slate-200 flex flex-wrap items-center px-4 justify-between shrink-0 z-10">
+        <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-teal-500 mr-4">Family Tree</h1>
+        <div className="flex flex-wrap gap-2 items-center justify-end flex-1">
           {/* Toolbar 預留 */}
           <select
             className="border border-slate-300 rounded-md px-3 py-1.5 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
@@ -120,7 +194,7 @@ function App() {
 
             {/* Settings Dropdown Panel */}
             {showSettings && (
-              <div className="absolute top-10 right-0 w-80 bg-white border border-slate-200 rounded-lg shadow-xl p-4 z-50 text-sm">
+              <div className="absolute top-10 right-0 w-80 bg-white border border-slate-200 rounded-lg shadow-xl p-4 z-50 text-sm max-h-[80vh] overflow-y-auto">
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="font-bold text-slate-700">視覺設定</h3>
                   <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-600">✕</button>
@@ -135,6 +209,20 @@ function App() {
                       className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
                     <span className="text-slate-700">顯示出生年份</span>
+                  </label>
+
+                  <label className="flex flex-col gap-1">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-slate-700">字體大小</span>
+                      <span className="text-slate-500">{uiConfig.fontSize}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="12" max="72" step="1"
+                      value={uiConfig.fontSize}
+                      onChange={(e) => updateUIConfig({ fontSize: Number(e.target.value) })}
+                      className="w-full"
+                    />
                   </label>
 
                   <label className="flex flex-col gap-1">
@@ -190,8 +278,8 @@ function App() {
                           </div>
                           <input
                             type="range"
-                            min={minSpacing} max={Math.max(800, minSpacing + 500)} step="10"
-                            value={uiConfig.polarGenerationRadii[idx] !== undefined ? uiConfig.polarGenerationRadii[idx] : Math.max(250, minSpacing)}
+                            min={minPolarRadii[idx] || minSpacing} max={Math.max(1000, (minPolarRadii[idx] || minSpacing) + 800)} step="10"
+                            value={uiConfig.polarGenerationRadii[idx] !== undefined ? Math.max(minPolarRadii[idx] || minSpacing, uiConfig.polarGenerationRadii[idx]) : Math.max(250, minPolarRadii[idx] || minSpacing)}
                             onChange={(e) => {
                               const newArr = [...uiConfig.polarGenerationRadii];
                               newArr[idx] = Number(e.target.value);

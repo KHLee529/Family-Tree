@@ -19,6 +19,7 @@ export interface UIConfig {
     yearSpacing: number;
     generationSpacingNormal: number;
     polarGenerationRadii: number[];
+    fontSize: number;
 }
 
 export interface FamilyState {
