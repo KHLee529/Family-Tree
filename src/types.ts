@@ -13,7 +13,17 @@ export interface FamilyMember {
     notes?: string; // 備註
 }
 
+export interface UIConfig {
+    showBirthYear: boolean;
+    nodeWritingMode: 'vertical-rl' | 'horizontal-tb';
+    yearSpacing: number;
+    generationSpacingNormal: number;
+    polarGenerationRadii: number[];
+}
+
 export interface FamilyState {
+    uiConfig: UIConfig;
+    updateUIConfig: (config: Partial<UIConfig>) => void;
     members: Record<string, FamilyMember>;
     addMember: (member: FamilyMember) => void;
     updateMember: (id: string, member: Partial<FamilyMember>) => void;

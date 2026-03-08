@@ -51,6 +51,17 @@ const mockData: Record<string, FamilyMember> = {
 
 export const useFamilyStore = create<FamilyState>((set) => ({
     members: mockData,
+    uiConfig: {
+        showBirthYear: true,
+        nodeWritingMode: 'vertical-rl',
+        yearSpacing: 20,
+        generationSpacingNormal: 240,
+        polarGenerationRadii: [300, 300, 250, 200, 200, 200, 200, 200, 200, 200], // Pre-populate some defaults
+    },
+    updateUIConfig: (config) =>
+        set((state) => ({
+            uiConfig: { ...state.uiConfig, ...config }
+        })),
     addMember: (member) =>
         set((state) => ({
             members: { ...state.members, [member.id]: member }
